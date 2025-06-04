@@ -1,6 +1,60 @@
 local wezterm = require("wezterm")
 local config = wezterm.config_builder()
 
+-- Helper functions for Kitty-like layouts
+local function create_tall_layout(window, pane)
+	local tab = window:active_tab()
+	local panes = tab:panes_with_info()
+
+	if #panes < 2 then
+		-- Need at least 2 panes for tall layout
+		window:perform_action(wezterm.action.SplitVertical({ domain = "CurrentPaneDomain" }), pane)
+		return
+	end
+
+	-- Set first pane to take 60% width, others split the remaining 40%
+	tab:set_zoomed(false)
+	for i, p in ipairs(panes) do
+		if i == 1 then
+			-- Main pane - resize to take more width
+			window:perform_action(wezterm.action.AdjustPaneSize({ "Right", 20 }), p.pane)
+		end
+	end
+end
+
+local function create_fat_layout(window, pane)
+	local tab = window:active_tab()
+	local panes = tab:panes_with_info()
+
+	if #panes < 2 then
+		window:perform_action(wezterm.action.SplitHorizontal({ domain = "CurrentPaneDomain" }), pane)
+		return
+	end
+
+	-- Set first pane to take 60% height, others split horizontally below
+	tab:set_zoomed(false)
+	for i, p in ipairs(panes) do
+		if i == 1 then
+			window:perform_action(wezterm.action.AdjustPaneSize({ "Down", 20 }), p.pane)
+		end
+	end
+end
+
+local function create_grid_layout(window, pane)
+	local tab = window:active_tab()
+	local panes = tab:panes_with_info()
+
+	-- Try to arrange panes in a grid pattern
+	tab:set_zoomed(false)
+	if #panes == 4 then
+		-- 2x2 grid - adjust all panes to similar sizes
+		window:perform_action(wezterm.action.PaneSelect({ mode = "Activate" }), pane)
+	else
+		-- For other numbers, just balance the panes
+		window:perform_action(wezterm.action.RotatePanes("Clockwise"), pane)
+	end
+end
+
 -- Configure keys to match Kitty defaults
 config.keys = {
 	-- Tab Management (Kitty defaults)
@@ -77,8 +131,72 @@ config.keys = {
 	-- Show/Hide tab bar
 	{ key = "F1", mods = "CTRL|SHIFT", action = wezterm.action.ShowTabNavigator },
 
-	-- Layout switching (approximate Kitty behavior)
-	{ key = "l", mods = "CTRL|ALT", action = wezterm.action.RotatePanes("Clockwise") },
+	-- Layout switching (Kitty-like behavior)
+	{
+		key = "l",
+		mods = "CTRL|ALT",
+		action = wezterm.action_callback(function(window, pane)
+			local tab = window:active_tab()
+			local panes = tab:panes_with_info()
+
+			if #panes == 1 then
+				return
+			elseif #panes == 2 then
+				-- Toggle between horizontal and vertical split
+				local current_size = panes[1].size
+				if current_size.cols > current_size.rows then
+					-- Currently horizontal, switch to vertical
+					tab:set_zoomed(false)
+					window:perform_action(wezterm.action.AdjustPaneSize({ "Left", -50 }), pane)
+				else
+					-- Currently vertical, switch to horizontal
+					tab:set_zoomed(false)
+					window:perform_action(wezterm.action.AdjustPaneSize({ "Up", -50 }), pane)
+				end
+			else
+				-- For more panes, rotate through different arrangements
+				window:perform_action(wezterm.action.RotatePanes("Clockwise"), pane)
+			end
+		end),
+	},
+
+	-- Predefined layouts
+	{
+		key = "t",
+		mods = "CTRL|ALT",
+		action = wezterm.action_callback(function(window, pane)
+			-- Tall layout: one main pane on left, others stacked on right
+			create_tall_layout(window, pane)
+		end),
+	},
+
+	{
+		key = "f",
+		mods = "CTRL|ALT",
+		action = wezterm.action_callback(function(window, pane)
+			-- Fat layout: one main pane on top, others in row below
+			create_fat_layout(window, pane)
+		end),
+	},
+
+	{
+		key = "g",
+		mods = "CTRL|ALT",
+		action = wezterm.action_callback(function(window, pane)
+			-- Grid layout: arrange panes in grid
+			create_grid_layout(window, pane)
+		end),
+	},
+
+	{
+		key = "s",
+		mods = "CTRL|ALT",
+		action = wezterm.action_callback(function(window, pane)
+			-- Stack layout: zoom current pane (like stack)
+			local tab = window:active_tab()
+			tab:set_zoomed(not tab:get_zoomed())
+		end),
+	},
 
 	-- Debug/Inspector (Kitty equivalents)
 	{ key = "I", mods = "CTRL|SHIFT", action = wezterm.action.ShowDebugOverlay },
